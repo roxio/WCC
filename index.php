@@ -98,7 +98,6 @@ function search_multiple_queries($queries) {
             $ref = isset($r['reference']) ? $r['reference'] : (isset($r['ref']) ? $r['ref'] : '');
             $ean = isset($r['ean']) ? $r['ean'] : '';
             
-            // Sprawdzamy dokładne dopasowanie dla reference lub EAN
             if ($ref === $query || $ean === $query) {
                 if (!in_array($ref, $found_refs)) {
                     $results[] = array_merge(['reference' => $ref, 'ean' => $ean], $r);
@@ -346,31 +345,29 @@ CSS;
     return $html;
 }
 
+// --- GŁÓWNA LOGIKA ---
 $found = [];
 $error = '';
 $success = false;
-$print_mode = isset($_GET['print']) && $_GET['print'] === '1';
 
-if ($print_mode) {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['data'])) {
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $items = isset($_POST['items']) ? json_decode($_POST['items'], true) : [];
-            $layout = $_POST['layout'] ?? '1up';
-        } else {
-            $items = isset($_GET['items']) ? json_decode(base64_decode($_GET['items']), true) : [];
-            $layout = $_GET['layout'] ?? '1up';
-        }
-        
-        if (!empty($items)) {
-            header('Content-Type: text/html; charset=utf-8');
-            echo render_print_page($items, $layout);
-            exit;
-        }
+$is_print_request = ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['print']) && $_POST['print'] === '1');
+
+// Obsługa żądania wydruku
+if ($is_print_request) {
+    $items = isset($_POST['items']) ? json_decode($_POST['items'], true) : [];
+    $layout = $_POST['layout'] ?? '1up';
+    
+    if (!empty($items)) {
+        header('Content-Type: text/html; charset=utf-8');
+        echo render_print_page($items, $layout);
+        exit;
+    } else {
+        $error = 'Brak danych do wydruku.';
     }
 }
 
-// Obsługa formularza głównego
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$print_mode) {
+// Obsługa formularza głównego (pierwsze wysłanie)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_print_request) {
     $q = isset($_POST['query']) ? trim($_POST['query']) : '';
     $layout = isset($_POST['layout']) ? $_POST['layout'] : '1up';
     
@@ -392,23 +389,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$print_mode) {
                 $error = 'Nie znaleziono pozycji dla podanych kodów: ' . htmlspecialchars($searched_codes);
             } else {
                 $success = true;
-                $print_data = [
-                    'items' => $found,
-                    'layout' => $layout
-                ];
             }
         }
     }
 }
 
 $query_value = '';
-if (isset($_POST['query'])) {
+if (isset($_POST['query']) && !$is_print_request) {
     $query_value = htmlspecialchars($_POST['query']);
 }
 
 $layout_value = isset($_POST['layout']) ? $_POST['layout'] : '1up';
-
-if ($print_mode) {
+if ($is_print_request) {
     exit;
 }
 ?>
@@ -508,7 +500,7 @@ if ($print_mode) {
     </style>
 </head>
 <body>
-    <form method="post" id="labelForm" target="_blank">
+    <form method="post" id="labelForm" <?= $success ? 'target="_blank"' : '' ?>>
         <h1>Generator etykiet</h1>
         
         <label for="query">Wpisz kody referencyjne lub EAN (jeden lub wiele)</label>
@@ -536,12 +528,13 @@ if ($print_mode) {
         <?php if ($success): ?>
             <div class="success">
                 ✓ Wygenerowano etykiety dla <?= count($found) ?> pozycji!<br>
-                <small>Strona wydruku otworzy się w nowej zakładce.</small>
+                <small>Kliknij przycisk poniżej aby otworzyć etykiety w nowej zakładce.</small>
             </div>
             
             <!-- Ukryte pola do przekazania danych do wydruku -->
             <input type="hidden" name="print" value="1">
             <input type="hidden" name="items" value="<?= htmlspecialchars(json_encode($found)) ?>">
+            <input type="hidden" name="layout" value="<?= htmlspecialchars($layout_value) ?>">
             
             <div class="no-print">
                 <button type="submit" class="btn-success">
@@ -573,7 +566,6 @@ if ($print_mode) {
         if (!successElement) {
             return true;
         }
-        
         return true;
     });
     </script>
