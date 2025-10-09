@@ -1,4 +1,6 @@
 <?php
+session_start();
+
 const DATA_FILE = __DIR__ . '/dane.csv';
 const DATA_FILE_TYPE = 'csv';
 
@@ -38,7 +40,6 @@ function load_data_csv($path) {
 }
 
 function load_data_xlsx($path) {
-    // wymaga phpoffice/phpspreadsheet
     if (!class_exists('\PhpOffice\PhpSpreadsheet\IOFactory')) {
         return [];
     }
@@ -92,7 +93,6 @@ function search_multiple_queries($queries) {
         }
         
         foreach ($rows as $r) {
-            // dopuszczalne klucze: reference, ean, name, supplier, range
             $ref = isset($r['reference']) ? $r['reference'] : (isset($r['ref']) ? $r['ref'] : '');
             $ean = isset($r['ean']) ? $r['ean'] : '';
             
@@ -188,19 +188,16 @@ function render_print_page($items, $layout) {
         background: white;
     }
     
-    /* Style dla układów landscape (1xA4, 4xA6) */
     .layout-landscape .sheet {
         width: 297mm;
         height: 210mm;
     }
     
-    /* 1-up - strona landscape, zawartość landscape */
     .layout-1up .label { 
         width: 100%; 
         height: 100%; 
     }
     
-    /* 4-up - strona landscape, zawartość landscape (siatka 2x2) */
     .layout-4up { 
         display: grid; 
         grid-template-columns: 1fr 1fr; 
@@ -214,13 +211,11 @@ function render_print_page($items, $layout) {
         height: 100%; 
     }
     
-    /* Style dla układów portrait (2xA5, 3v) */
     .layout-portrait .sheet {
         width: 210mm;
         height: 297mm;
     }
     
-    /* 2-up - strona vertical, zawartość landscape (2 etykiety A5 jedna pod drugą) */
     .layout-2up { 
         display: flex;
         flex-direction: column;
@@ -232,7 +227,6 @@ function render_print_page($items, $layout) {
         height: 50%; 
     }
     
-    /* 3 vertical stripes - strona vertical, zawartość landscape (3 etykiety obok siebie) */
     .layout-3v { 
         display: flex;
         flex-direction: row;
@@ -244,7 +238,6 @@ function render_print_page($items, $layout) {
         height: 100%; 
     }
 
-    /* Zawartość etykiety */
     .ref { 
         font-weight: bold; 
         line-height: 1; 
@@ -265,7 +258,6 @@ function render_print_page($items, $layout) {
         font-size: 10px; 
     }
 
-    /* Dopasowanie rozmiaru czcionki do układu */
     .layout-1up .ref { font-size: 72px; }
     .layout-2up .ref { font-size: 48px; }
     .layout-4up .ref { font-size: 32px; }
@@ -281,7 +273,6 @@ function render_print_page($items, $layout) {
     .layout-4up .barcode img { height: 30px; }
     .layout-3v .barcode img { height: 35px; }
 
-    /* Przy wydruku ukryj przyciski */
     @media print { 
         .no-print { 
             display: none !important; 
@@ -296,7 +287,6 @@ function render_print_page($items, $layout) {
         }
     }
     
-    /* Przycisk powrotu */
     .back-button {
         margin: 20px auto;
         padding: 10px 20px;
@@ -308,7 +298,6 @@ function render_print_page($items, $layout) {
         display: block;
     }
     
-    /* Informacja o stronie */
     .page-info {
         position: absolute;
         top: 5mm;
@@ -392,7 +381,6 @@ CSS;
 
     $html .= '<script>
         window.onload = function() {
-            // Ustaw orientację strony przed drukowaniem
             const layout = "' . $layout . '";
             let orientation = "landscape";
             
@@ -400,12 +388,10 @@ CSS;
                 orientation = "portrait";
             }
             
-            // Dodaj styl dla orientacji strony
             const style = document.createElement("style");
             style.innerHTML = `@page { size: A4 ${orientation}; margin: 0; }`;
             document.head.appendChild(style);
             
-            // Automatyczne uruchomienie drukowania po załadowaniu strony
             setTimeout(function() {
                 window.print();
             }, 500);
@@ -420,10 +406,15 @@ $found = [];
 $error = '';
 $success = false;
 
+if (isset($_SESSION['found_items'])) {
+    $found = $_SESSION['found_items'];
+    $success = true;
+}
+
 $is_print_request = ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['print']) && $_POST['print'] === '1');
 
 if ($is_print_request) {
-    $items = isset($_POST['items']) ? json_decode($_POST['items'], true) : [];
+    $items = isset($_SESSION['found_items']) ? $_SESSION['found_items'] : [];
     $layout = $_POST['layout'] ?? '1up';
     
     if (!empty($items)) {
@@ -457,13 +448,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_print_request) {
                 $error = 'Nie znaleziono pozycji dla podanych kodów: ' . htmlspecialchars($searched_codes);
             } else {
                 $success = true;
+                $_SESSION['found_items'] = $found;
+                $_SESSION['query_value'] = $q;
             }
         }
     }
 }
 
 $query_value = '';
-if (isset($_POST['query']) && !$is_print_request) {
+if (isset($_SESSION['query_value'])) {
+    $query_value = htmlspecialchars($_SESSION['query_value']);
+} elseif (isset($_POST['query']) && !$is_print_request) {
     $query_value = htmlspecialchars($_POST['query']);
 }
 
@@ -517,6 +512,9 @@ if ($is_print_request) {
     }
     .no-print {
         margin-top: 20px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
     }
     button, .btn {
         background: #007cba;
@@ -529,6 +527,8 @@ if ($is_print_request) {
         text-decoration: none;
         display: inline-block;
         text-align: center;
+        flex: 1;
+        min-width: 200px;
     }
     button:hover, .btn:hover {
         background: #005a87;
@@ -538,6 +538,13 @@ if ($is_print_request) {
     }
     .btn-success:hover {
         background: #218838;
+    }
+    .btn-warning {
+        background: #ffc107;
+        color: #212529;
+    }
+    .btn-warning:hover {
+        background: #e0a800;
     }
     .error {
         color: #d63384;
@@ -573,7 +580,7 @@ if ($is_print_request) {
     </style>
 </head>
 <body>
-    <form method="post" id="labelForm" <?= $success ? 'target="_blank"' : '' ?>>
+    <form method="post" id="labelForm">
         <h1>Generator etykiet</h1>
         
         <label for="query">Wpisz kody referencyjne lub EAN (jeden lub wiele)</label>
@@ -587,6 +594,7 @@ if ($is_print_request) {
             <option value="4up" <?= $layout_value === '4up' ? 'selected' : '' ?>>4 x A6 na A4 (4 etykiety na stronę)</option>
             <option value="3v" <?= $layout_value === '3v' ? 'selected' : '' ?>>A4 podzielone na 3 paski w pionie</option>
         </select>
+        
         <?php if ($success): ?>
         <div class="layout-info">
             <strong>Przewidywana liczba stron dla <?= count($found) ?> kodów:</strong><br>
@@ -598,7 +606,6 @@ if ($is_print_request) {
         <?php endif; ?>
         
         <p class="hint">
-            Plik danych (<?= DATA_FILE_TYPE ?>) znajduje się w: <?= htmlspecialchars(DATA_FILE) ?><br>
             Wymagane nagłówki: reference, ean, name, supplier, range<br>
             Możesz wpisać wiele kodów na raz - oddziel je spacjami, przecinkami lub enterem
         </p>
@@ -607,29 +614,21 @@ if ($is_print_request) {
             <div class="error"><?= $error ?></div>
         <?php endif; ?>
         
-        <?php if ($success): ?>
-            <div class="success">
-                ✓ Wygenerowano etykiety dla <?= count($found) ?> pozycji!<br>
-                <small>Kliknij przycisk poniżej aby otworzyć etykiety w nowej zakładce.</small>
-            </div>
-            
-            <input type="hidden" name="print" value="1">
-            <input type="hidden" name="items" value="<?= htmlspecialchars(json_encode($found)) ?>">
-            <input type="hidden" name="layout" value="<?= htmlspecialchars($layout_value) ?>">
-            
-            <div class="no-print">
-                <button type="submit" class="btn-success">
+        <div class="no-print">
+            <?php if ($success): ?>
+                <button type="submit" name="print" value="1" class="btn-success" formtarget="_blank">
                     🖨️ Otwórz etykiety w nowej zakładce
                 </button>
-                <button type="button" onclick="location.href=''" style="background: #6c757d; margin-left: 10px;">
-                    Wygeneruj ponownie
+                <button type="submit" class="btn-warning">
+                    🔄 Przeładuj z nowym układem
                 </button>
-            </div>
-        <?php else: ?>
-            <div class="no-print">
+                <button type="button" onclick="location.href='?clear=1'" style="background: #6c757d;">
+                    🆕 Nowe wyszukiwanie
+                </button>
+            <?php else: ?>
                 <button type="submit">Wyszukaj i wygeneruj etykiety</button>
-            </div>
-        <?php endif; ?>
+            <?php endif; ?>
+        </div>
     </form>
 
     <?php if (!$success): ?>
@@ -640,15 +639,14 @@ if ($is_print_request) {
         </div>
     </div>
     <?php endif; ?>
-
-    <script>
-    document.getElementById('labelForm').addEventListener('submit', function(e) {
-        const successElement = document.querySelector('.success');
-        if (!successElement) {
-            return true;
-        }
-        return true;
-    });
-    </script>
 </body>
 </html>
+
+<?php
+if (isset($_GET['clear']) && $_GET['clear'] == '1') {
+    unset($_SESSION['found_items']);
+    unset($_SESSION['query_value']);
+    header('Location: ' . str_replace('?clear=1', '', $_SERVER['REQUEST_URI']));
+    exit;
+}
+?>
