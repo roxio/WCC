@@ -11,7 +11,6 @@ function load_data_csv($path) {
     }
     
     if (($h = fopen($path, 'r')) !== false) {
-        // Sprawdź BOM dla UTF-8
         $bom = fread($h, 3);
         if ($bom != "\xEF\xBB\xBF") {
             rewind($h);
@@ -23,7 +22,6 @@ function load_data_csv($path) {
             return $rows;
         }
         
-        // Normalizuj nagłówki
         $normalized_headers = [];
         foreach ($headers as $header) {
             $normalized_headers[] = trim($header);
@@ -76,7 +74,7 @@ function load_data_xlsx($path) {
     }
 }
 
-function search_data($query) {
+function search_multiple_queries($queries) {
     $type = DATA_FILE_TYPE;
     $rows = [];
     
@@ -86,24 +84,45 @@ function search_data($query) {
         $rows = load_data_xlsx(DATA_FILE);
     }
     
-    $query = trim($query);
-    if ($query === '') {
-        return [];
-    }
-    
     $results = [];
-    foreach ($rows as $r) {
-        // dopuszczalne klucze: reference, ean, name, supplier, range
-        $ref = isset($r['reference']) ? $r['reference'] : (isset($r['ref']) ? $r['ref'] : '');
-        $ean = isset($r['ean']) ? $r['ean'] : '';
+    $found_refs = [];
+    
+    foreach ($queries as $query) {
+        $query = trim($query);
+        if ($query === '') {
+            continue;
+        }
         
-        if ($ref === $query || $ean === $query || 
-            stripos($ref, $query) !== false || 
-            stripos($ean, $query) !== false) {
-            $results[] = array_merge(['reference' => $ref, 'ean' => $ean], $r);
+        foreach ($rows as $r) {
+            // dopuszczalne klucze: reference, ean, name, supplier, range
+            $ref = isset($r['reference']) ? $r['reference'] : (isset($r['ref']) ? $r['ref'] : '');
+            $ean = isset($r['ean']) ? $r['ean'] : '';
+            
+            // Sprawdzamy dokładne dopasowanie dla reference lub EAN
+            if ($ref === $query || $ean === $query) {
+                if (!in_array($ref, $found_refs)) {
+                    $results[] = array_merge(['reference' => $ref, 'ean' => $ean], $r);
+                    $found_refs[] = $ref;
+                }
+            }
         }
     }
     return $results;
+}
+
+function parse_query_input($input) {
+    $input = trim($input);
+    if (empty($input)) {
+        return [];
+    }
+    
+    $input = str_replace([',', ';', "\r\n", "\n", "\t"], ' ', $input);
+    $queries = preg_split('/\s+/', $input);
+    $queries = array_filter($queries, function($q) {
+        return !empty(trim($q));
+    });
+    
+    return array_unique($queries);
 }
 
 function code128_svg($text, $height = 40, $scale = 2) {
@@ -261,7 +280,7 @@ function render_print_page($items, $layout) {
 CSS;
 
     $html = '<!doctype html><html><head><meta charset="utf-8"><title>Etykiety</title>' . $style . '</head><body>';
-    $html .= '<button onclick="window.history.back()" class="back-button no-print">Powrót do wyszukiwania</button>';
+    $html .= '<button onclick="window.close()" class="back-button no-print">Zamknij okno</button>';
     $html .= '<div class="sheet layout-' . htmlspecialchars($layout) . '">';
 
     foreach ($items as $it) {
@@ -327,26 +346,57 @@ CSS;
     return $html;
 }
 
-// --- obsługa formularza i generowanie etykiet ---
 $found = [];
 $error = '';
+$success = false;
+$print_mode = isset($_GET['print']) && $_GET['print'] === '1';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($print_mode) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' || isset($_GET['data'])) {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $items = isset($_POST['items']) ? json_decode($_POST['items'], true) : [];
+            $layout = $_POST['layout'] ?? '1up';
+        } else {
+            $items = isset($_GET['items']) ? json_decode(base64_decode($_GET['items']), true) : [];
+            $layout = $_GET['layout'] ?? '1up';
+        }
+        
+        if (!empty($items)) {
+            header('Content-Type: text/html; charset=utf-8');
+            echo render_print_page($items, $layout);
+            exit;
+        }
+    }
+}
+
+// Obsługa formularza głównego
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$print_mode) {
     $q = isset($_POST['query']) ? trim($_POST['query']) : '';
     $layout = isset($_POST['layout']) ? $_POST['layout'] : '1up';
     
     if (empty($q)) {
         $error = 'Wpisz kod referencyjny lub EAN.';
-    } elseif (!preg_match('/^[a-zA-Z0-9\s\-_]*$/', $q)) {
-        $error = 'Wprowadzono nieprawidłowe znaki. Dozwolone są tylko litery, cyfry, spacje, myślniki i podkreślniki.';
+    } elseif (!preg_match('/^[a-zA-Z0-9\s\-\_,;\r\n]*$/', $q)) {
+        $error = 'Wprowadzono nieprawidłowe znaki. Dozwolone są tylko litery, cyfry, spacje, myślniki, podkreślniki, przecinki i średniki.';
     } else {
-        $found = search_data($q);
-        if (empty($found)) {
-            $error = 'Nie znaleziono pozycji dla: ' . htmlspecialchars($q);
+        $queries = parse_query_input($q);
+        if (empty($queries)) {
+            $error = 'Nie znaleziono prawidłowych kodów w podanym tekście.';
         } else {
-            header('Content-Type: text/html; charset=utf-8');
-            echo render_print_page($found, $layout);
-            exit;
+            $found = search_multiple_queries($queries);
+            if (empty($found)) {
+                $searched_codes = implode(', ', array_slice($queries, 0, 5));
+                if (count($queries) > 5) {
+                    $searched_codes .= '... (łącznie ' . count($queries) . ' kodów)';
+                }
+                $error = 'Nie znaleziono pozycji dla podanych kodów: ' . htmlspecialchars($searched_codes);
+            } else {
+                $success = true;
+                $print_data = [
+                    'items' => $found,
+                    'layout' => $layout
+                ];
+            }
         }
     }
 }
@@ -357,6 +407,10 @@ if (isset($_POST['query'])) {
 }
 
 $layout_value = isset($_POST['layout']) ? $_POST['layout'] : '1up';
+
+if ($print_mode) {
+    exit;
+}
 ?>
 <!doctype html>
 <html lang="pl">
@@ -383,13 +437,18 @@ $layout_value = isset($_POST['layout']) ? $_POST['layout'] : '1up';
         margin-top: 15px;
         font-weight: bold;
     }
-    input[type=text], select {
+    input[type=text], select, textarea {
         width: 100%;
         padding: 10px;
         margin-top: 5px;
         border: 1px solid #ccc;
         border-radius: 4px;
         box-sizing: border-box;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+    textarea {
+        height: 120px;
+        resize: vertical;
     }
     .hint {
         font-size: 12px;
@@ -399,7 +458,7 @@ $layout_value = isset($_POST['layout']) ? $_POST['layout'] : '1up';
     .no-print {
         margin-top: 20px;
     }
-    button {
+    button, .btn {
         background: #007cba;
         color: white;
         padding: 12px 24px;
@@ -407,9 +466,18 @@ $layout_value = isset($_POST['layout']) ? $_POST['layout'] : '1up';
         border-radius: 4px;
         cursor: pointer;
         font-size: 16px;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
     }
-    button:hover {
+    button:hover, .btn:hover {
         background: #005a87;
+    }
+    .btn-success {
+        background: #28a745;
+    }
+    .btn-success:hover {
+        background: #218838;
     }
     .error {
         color: #d63384;
@@ -421,23 +489,31 @@ $layout_value = isset($_POST['layout']) ? $_POST['layout'] : '1up';
         border-radius: 4px;
     }
     .success {
-        color: #0d6efd;
+        color: #155724;
+        font-weight: bold;
         margin: 15px 0;
+        padding: 15px;
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        border-radius: 4px;
+    }
+    .info {
+        color: #0c5460;
+        margin: 10px 0;
         padding: 10px;
-        background: #f0f9ff;
-        border: 1px solid #b6d4fe;
+        background: #d1ecf1;
+        border: 1px solid #bee5eb;
         border-radius: 4px;
     }
     </style>
 </head>
 <body>
-    
-    
-    <form method="post">
-	<h1>Generator etykiet</h1>
-        <label for="query">Wpisz kod referencyjny lub EAN</label>
-        <input type="text" id="query" name="query" value="<?= $query_value ?>" required 
-               placeholder="np. REF12345 lub 1234567890123">
+    <form method="post" id="labelForm" target="_blank">
+        <h1>Generator etykiet</h1>
+        
+        <label for="query">Wpisz kody referencyjne lub EAN (jeden lub wiele)</label>
+        <textarea id="query" name="query" required 
+                  placeholder="Możesz wpisać wiele kodów oddzielonych spacjami, przecinkami lub enterem&#10;np.:&#10;REF001&#10;REF002, REF003&#10;5901234567890 5902345678901"><?= $query_value ?></textarea>
         
         <label for="layout">Układ etykiet</label>
         <select id="layout" name="layout">
@@ -449,20 +525,57 @@ $layout_value = isset($_POST['layout']) ? $_POST['layout'] : '1up';
         
         <p class="hint">
             Plik danych (<?= DATA_FILE_TYPE ?>) znajduje się w: <?= htmlspecialchars(DATA_FILE) ?><br>
-            Wymagane nagłówki: reference, ean, name, supplier, range
+            Wymagane nagłówki: reference, ean, name, supplier, range<br>
+            Możesz wpisać wiele kodów na raz - oddziel je spacjami, przecinkami lub enterem
         </p>
         
         <?php if ($error): ?>
             <div class="error"><?= $error ?></div>
         <?php endif; ?>
         
-        <?php if (!empty($found) && empty($error)): ?>
-            <div class="success">Znaleziono <?= count($found) ?> pozycji</div>
+        <?php if ($success): ?>
+            <div class="success">
+                ✓ Wygenerowano etykiety dla <?= count($found) ?> pozycji!<br>
+                <small>Strona wydruku otworzy się w nowej zakładce.</small>
+            </div>
+            
+            <!-- Ukryte pola do przekazania danych do wydruku -->
+            <input type="hidden" name="print" value="1">
+            <input type="hidden" name="items" value="<?= htmlspecialchars(json_encode($found)) ?>">
+            
+            <div class="no-print">
+                <button type="submit" class="btn-success">
+                    🖨️ Otwórz etykiety w nowej zakładce
+                </button>
+                <button type="button" onclick="location.href=''" style="background: #6c757d; margin-left: 10px;">
+                    Wygeneruj ponownie
+                </button>
+            </div>
+        <?php else: ?>
+            <div class="no-print">
+                <button type="submit">Wyszukaj i wygeneruj etykiety</button>
+            </div>
         <?php endif; ?>
-        
-        <div class="no-print">
-            <button type="submit">Wyszukaj i wygeneruj etykiety</button>
-        </div>
     </form>
+
+    <?php if (!$success): ?>
+    <div style="max-width: 700px; margin: 20px auto;">
+        <div class="info">
+            <strong>Przykładowe kody do testów:</strong><br>
+            REF001, REF002, REF003, 5901234567890, 5902345678901
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <script>
+    document.getElementById('labelForm').addEventListener('submit', function(e) {
+        const successElement = document.querySelector('.success');
+        if (!successElement) {
+            return true;
+        }
+        
+        return true;
+    });
+    </script>
 </body>
 </html>
