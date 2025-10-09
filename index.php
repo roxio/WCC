@@ -1,9 +1,7 @@
 <?php
-// KONFIGURACJA
 const DATA_FILE = __DIR__ . '/dane.csv';
 const DATA_FILE_TYPE = 'csv';
 
-// --- pomocnicze funkcje ---
 function load_data_csv($path) {
     $rows = [];
     if (!file_exists($path)) {
@@ -163,95 +161,125 @@ function render_print_page($items, $layout) {
         $layout = '1up';
     }
     
+    $page_orientation = 'landscape';
+    if ($layout === '2up' || $layout === '3v') {
+        $page_orientation = 'portrait';
+    }
+    
     $style = <<<CSS
     <style>
-    @page { 
-        size: A4; 
-        margin: 5mm; 
-    }
     body { 
         font-family: Arial, Helvetica, sans-serif; 
         margin: 0; 
         padding: 0; 
     }
     .sheet { 
-        width: 210mm; 
-        height: 297mm; 
-        box-sizing: border-box; 
+        box-sizing: border-box;
         page-break-after: always;
+        position: relative;
     }
     .label { 
         box-sizing: border-box; 
         border: 1px solid #ccc; 
-        padding: 4mm; 
+        padding: 3mm; 
         display: flex; 
         flex-direction: column; 
-        justify-content: space-between; 
+        justify-content: space-between;
+        background: white;
     }
-    /* 1-up */
+    
+    /* Style dla układów landscape (1xA4, 4xA6) */
+    .layout-landscape .sheet {
+        width: 297mm;
+        height: 210mm;
+    }
+    
+    /* 1-up - strona landscape, zawartość landscape */
     .layout-1up .label { 
         width: 100%; 
         height: 100%; 
     }
-    /* 2-up (2x A5 stacked vertically) */
-    .layout-2up { 
-        display: flex; 
-        flex-direction: column; 
-        gap: 0; 
-        height: 100%;
-    }
-    .layout-2up .label { 
-        width: 100%; 
-        height: calc(50% - 1mm); 
-    }
-    /* 4-up (4x A6) */
+    
+    /* 4-up - strona landscape, zawartość landscape (siatka 2x2) */
     .layout-4up { 
         display: grid; 
         grid-template-columns: 1fr 1fr; 
         grid-template-rows: 1fr 1fr; 
         gap: 0; 
         height: 100%;
+        width: 100%;
     }
     .layout-4up .label { 
         width: 100%; 
         height: 100%; 
     }
-    /* 3 vertical stripes */
+    
+    /* Style dla układów portrait (2xA5, 3v) */
+    .layout-portrait .sheet {
+        width: 210mm;
+        height: 297mm;
+    }
+    
+    /* 2-up - strona vertical, zawartość landscape (2 etykiety A5 jedna pod drugą) */
+    .layout-2up { 
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+    }
+    .layout-2up .label { 
+        width: 100%; 
+        height: 50%; 
+    }
+    
+    /* 3 vertical stripes - strona vertical, zawartość landscape (3 etykiety obok siebie) */
     .layout-3v { 
-        display: grid; 
-        grid-template-columns: repeat(3, 1fr); 
-        grid-template-rows: 1fr; 
-        gap: 0; 
+        display: flex;
+        flex-direction: row;
+        width: 100%;
         height: 100%;
     }
     .layout-3v .label { 
+        width: 33.333%; 
         height: 100%; 
     }
 
     /* Zawartość etykiety */
     .ref { 
         font-weight: bold; 
-        font-size: 40px; 
         line-height: 1; 
         text-align: center; 
         flex: 0 0 auto; 
+        margin-bottom: 5px;
+        word-break: break-all;
     }
     .meta { 
-        font-size: 12px; 
-        margin-top: 6px; 
         flex: 0 0 auto; 
     }
     .barcode { 
         text-align: center; 
-        margin-top: 6px; 
+        margin-top: 5px; 
         flex: 0 0 auto; 
     }
     .small { 
         font-size: 10px; 
     }
-    .ref.big { 
-        font-size: 48px; 
-    }
+
+    /* Dopasowanie rozmiaru czcionki do układu */
+    .layout-1up .ref { font-size: 72px; }
+    .layout-2up .ref { font-size: 48px; }
+    .layout-4up .ref { font-size: 32px; }
+    .layout-3v .ref { font-size: 36px; }
+    
+    .layout-1up .meta { font-size: 14px; }
+    .layout-2up .meta { font-size: 12px; }
+    .layout-4up .meta { font-size: 9px; }
+    .layout-3v .meta { font-size: 10px; }
+    
+    .layout-1up .barcode img { height: 60px; }
+    .layout-2up .barcode img { height: 40px; }
+    .layout-4up .barcode img { height: 30px; }
+    .layout-3v .barcode img { height: 35px; }
 
     /* Przy wydruku ukryj przyciski */
     @media print { 
@@ -261,6 +289,10 @@ function render_print_page($items, $layout) {
         body { 
             margin: 0 !important; 
             padding: 0 !important; 
+        }
+        .sheet {
+            margin: 0 !important;
+            padding: 0 !important;
         }
     }
     
@@ -275,66 +307,104 @@ function render_print_page($items, $layout) {
         cursor: pointer;
         display: block;
     }
+    
+    /* Informacja o stronie */
+    .page-info {
+        position: absolute;
+        top: 5mm;
+        right: 5mm;
+        font-size: 10px;
+        color: #999;
+        background: white;
+        padding: 2px 5px;
+        border-radius: 3px;
+    }
     </style>
 CSS;
 
-    $html = '<!doctype html><html><head><meta charset="utf-8"><title>Etykiety</title>' . $style . '</head><body>';
+    $html = '<!doctype html><html><head><meta charset="utf-8"><title>Etykiety</title>' . $style . '</head>';
+    $html .= '<body class="layout-' . $page_orientation . '">';
     $html .= '<button onclick="window.close()" class="back-button no-print">Zamknij okno</button>';
-    $html .= '<div class="sheet layout-' . htmlspecialchars($layout) . '">';
-
-    foreach ($items as $it) {
-        $ref = htmlspecialchars($it['reference'] ?? '');
-        $ean = htmlspecialchars($it['ean'] ?? '');
-        $name = htmlspecialchars($it['name'] ?? '');
-        $supplier = htmlspecialchars($it['supplier'] ?? '');
-        $range = htmlspecialchars($it['range'] ?? '');
-        $barcode = code128_svg($ref, 40, 2);
-
-        $html .= '<div class="label">';
-        $html .= '<div class="ref big">' . $ref . '</div>';
-        $html .= '<div class="meta small">';
-        if ($name) {
-            $html .= 'Nazwa: ' . $name . '<br>';
-        }
-        if ($ean) {
-            $html .= 'EAN: ' . $ean . '<br>';
-        }
-        $html .= 'Data wydruku: ' . $date . '<br>';
-        if ($supplier) {
-            $html .= 'Dostawca: ' . $supplier . '<br>';
-        }
-        if ($range) {
-            $html .= 'Gama: ' . $range . '<br>';
-        }
-        $html .= '</div>';
-        $html .= '<div class="barcode"><img src="' . $barcode . '" alt="barcode" style="max-width: 100%;"></div>';
-        $html .= '</div>';
-    }
-
-    $item_count = count($items);
-    $needed = 0;
     
+    $labels_per_page = 1;
     switch ($layout) {
-        case '4up':
-            $needed = (4 - ($item_count % 4)) % 4;
-            break;
-        case '2up':
-            $needed = (2 - ($item_count % 2)) % 2;
-            break;
-        case '3v':
-            $needed = (3 - ($item_count % 3)) % 3;
-            break;
-        default:
-            $needed = 0;
+        case '2up': $labels_per_page = 2; break;
+        case '4up': $labels_per_page = 4; break;
+        case '3v': $labels_per_page = 3; break;
+        default: $labels_per_page = 1;
     }
     
-    for ($i = 0; $i < $needed; $i++) {
-        $html .= '<div class="label"></div>';
+    $total_pages = ceil(count($items) / $labels_per_page);
+    $page_number = 1;
+    
+    for ($page = 0; $page < $total_pages; $page++) {
+        $html .= '<div class="sheet layout-' . htmlspecialchars($layout) . '">';
+        $html .= '<div class="page-info no-print">Strona ' . $page_number . ' z ' . $total_pages . '</div>';
+        
+        $page_items = array_slice($items, $page * $labels_per_page, $labels_per_page);
+        
+        foreach ($page_items as $it) {
+            $ref = htmlspecialchars($it['reference'] ?? '');
+            $ean = htmlspecialchars($it['ean'] ?? '');
+            $name = htmlspecialchars($it['name'] ?? '');
+            $supplier = htmlspecialchars($it['supplier'] ?? '');
+            $range = htmlspecialchars($it['range'] ?? '');
+            
+            $barcode_height = 60;
+            switch ($layout) {
+                case '2up': $barcode_height = 40; break;
+                case '4up': $barcode_height = 30; break;
+                case '3v': $barcode_height = 35; break;
+                default: $barcode_height = 60;
+            }
+            
+            $barcode = code128_svg($ref, $barcode_height, 2);
+
+            $html .= '<div class="label">';
+            $html .= '<div class="ref">' . $ref . '</div>';
+            $html .= '<div class="meta small">';
+            if ($name) {
+                $html .= 'Nazwa: ' . $name . '<br>';
+            }
+            if ($ean) {
+                $html .= 'EAN: ' . $ean . '<br>';
+            }
+            $html .= 'Data: ' . $date . '<br>';
+            if ($supplier) {
+                $html .= 'Dostawca: ' . $supplier . '<br>';
+            }
+            if ($range) {
+                $html .= 'Gama: ' . $range . '<br>';
+            }
+            $html .= '</div>';
+            $html .= '<div class="barcode"><img src="' . $barcode . '" alt="barcode" style="max-width: 100%;"></div>';
+            $html .= '</div>';
+        }
+        
+        $empty_slots = $labels_per_page - count($page_items);
+        for ($i = 0; $i < $empty_slots; $i++) {
+            $html .= '<div class="label"></div>';
+        }
+        
+        $html .= '</div>';
+        $page_number++;
     }
 
-    $html .= '</div>';
     $html .= '<script>
         window.onload = function() {
+            // Ustaw orientację strony przed drukowaniem
+            const layout = "' . $layout . '";
+            let orientation = "landscape";
+            
+            if (layout === "2up" || layout === "3v") {
+                orientation = "portrait";
+            }
+            
+            // Dodaj styl dla orientacji strony
+            const style = document.createElement("style");
+            style.innerHTML = `@page { size: A4 ${orientation}; margin: 0; }`;
+            document.head.appendChild(style);
+            
             // Automatyczne uruchomienie drukowania po załadowaniu strony
             setTimeout(function() {
                 window.print();
@@ -352,7 +422,6 @@ $success = false;
 
 $is_print_request = ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['print']) && $_POST['print'] === '1');
 
-// Obsługa żądania wydruku
 if ($is_print_request) {
     $items = isset($_POST['items']) ? json_decode($_POST['items'], true) : [];
     $layout = $_POST['layout'] ?? '1up';
@@ -366,7 +435,6 @@ if ($is_print_request) {
     }
 }
 
-// Obsługa formularza głównego (pierwsze wysłanie)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$is_print_request) {
     $q = isset($_POST['query']) ? trim($_POST['query']) : '';
     $layout = isset($_POST['layout']) ? $_POST['layout'] : '1up';
@@ -497,6 +565,11 @@ if ($is_print_request) {
         border: 1px solid #bee5eb;
         border-radius: 4px;
     }
+    .layout-info {
+        margin-top: 5px;
+        font-size: 11px;
+        color: #666;
+    }
     </style>
 </head>
 <body>
@@ -514,6 +587,15 @@ if ($is_print_request) {
             <option value="4up" <?= $layout_value === '4up' ? 'selected' : '' ?>>4 x A6 na A4 (4 etykiety na stronę)</option>
             <option value="3v" <?= $layout_value === '3v' ? 'selected' : '' ?>>A4 podzielone na 3 paski w pionie</option>
         </select>
+        <?php if ($success): ?>
+        <div class="layout-info">
+            <strong>Przewidywana liczba stron dla <?= count($found) ?> kodów:</strong><br>
+            • 1xA4: <?= ceil(count($found) / 1) ?> stron(y)<br>
+            • 2xA5: <?= ceil(count($found) / 2) ?> stron(y)<br>
+            • 4xA6: <?= ceil(count($found) / 4) ?> stron(y)<br>
+            • 3 paski: <?= ceil(count($found) / 3) ?> stron(y)
+        </div>
+        <?php endif; ?>
         
         <p class="hint">
             Plik danych (<?= DATA_FILE_TYPE ?>) znajduje się w: <?= htmlspecialchars(DATA_FILE) ?><br>
@@ -531,7 +613,6 @@ if ($is_print_request) {
                 <small>Kliknij przycisk poniżej aby otworzyć etykiety w nowej zakładce.</small>
             </div>
             
-            <!-- Ukryte pola do przekazania danych do wydruku -->
             <input type="hidden" name="print" value="1">
             <input type="hidden" name="items" value="<?= htmlspecialchars(json_encode($found)) ?>">
             <input type="hidden" name="layout" value="<?= htmlspecialchars($layout_value) ?>">
