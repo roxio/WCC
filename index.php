@@ -230,23 +230,23 @@ function render_labels($items, $layout) {
     .layout-1up .date-line { font-size: 18px; }
     .layout-1up .ref-bottom { font-size: 240px; }
 
-    .layout-2up .barcode-top img { height: 100px; }
-    .layout-2up .name-line { font-size: 12px; }
-    .layout-2up .supplier-gama { font-size: 12px; }
-    .layout-2up .date-line { font-size: 12px; }
-    .layout-2up .ref-bottom { font-size: 48px; }
+    .layout-2up .barcode-top img { height: 110px; }
+    .layout-2up .name-line { font-size: 34px; }
+    .layout-2up .supplier-gama { font-size: 16px; }
+    .layout-2up .date-line { font-size: 16px; }
+    .layout-2up .ref-bottom { font-size: 168px; }
 
-    .layout-4up .barcode-top img { height: 60px; }
-    .layout-4up .name-line { font-size: 10px; }
-    .layout-4up .supplier-gama { font-size: 10px; }
-    .layout-4up .date-line { font-size: 10px; }
-    .layout-4up .ref-bottom { font-size: 32px; }
+    .layout-4up .barcode-top img { height: 74px; }
+    .layout-4up .name-line { font-size: 22px; }
+    .layout-4up .supplier-gama { font-size: 14px; }
+    .layout-4up .date-line { font-size: 14px; }
+    .layout-4up .ref-bottom { font-size: 110px; margin-top: 2mm; }
 
-    .layout-3v .barcode-top img { height: 100px; }
-    .layout-3v .name-line { font-size: 11px; }
-    .layout-3v .supplier-gama { font-size: 11px; }
-    .layout-3v .date-line { font-size: 11px; }
-    .layout-3v .ref-bottom { font-size: 36px; }
+    .layout-3v .barcode-top img { height: 160px; transform: rotate(90deg); }
+    .layout-3v .name-line { font-size: 26px; transform: rotate(90deg) translateX(-60%); }
+    .layout-3v .supplier-gama { font-size: 16px; transform: rotate(90deg) translateX(33%);}
+    .layout-3v .date-line { font-size: 16px; transform: rotate(90deg) translateX(33%); }
+    .layout-3v .ref-bottom { font-size: 50px; margin-top: -80mm;  }
 
     @media print { 
         .no-print { display: none !important; }
