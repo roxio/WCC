@@ -309,7 +309,7 @@ CSS;
             // 2. Środkowa część z danymi
             $html .= '<div class="info-middle">';
 			// Linia: Dostawca: ...    Gama: ...
-            $html .= '<div class="supplier-gama">' . $supplier . '    &nbsp; &nbsp; <b>' . $gama . '</b> &nbsp; &nbsp; ' . $current_date . ' </div>';
+            $html .= '<div class="supplier-gama">' . $current_date . '    &nbsp; &nbsp; &nbsp; <b>' . $gama . '</b> &nbsp; &nbsp; &nbsp; ' . $supplier . ' </div>';
             // Linia: Data: ...
             $html .= '</div>';
 			
@@ -376,7 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['datafile']) && $_FIL
             $data = load_data_from_csv($temp_path);
             unlink($temp_path); // usuwamy plik tymczasowy
             if (empty($data)) {
-                $error = 'Nie udało się wczytać danych z pliku. Sprawdź format CSV (nagłówki: Referencja, Nazwa referencji, Nazwa dostawcy, Gama, Cena standardowa).';
+                $error = 'Nie udało się wczytać danych z pliku. Sprawdź format CSV (nagłówki: Referencja, Nazwa referencji, Nazwa dostawcy, Gama).';
             } else {
                 $_SESSION['product_data'] = $data;
                 $_SESSION['uploaded_file'] = $file_name;
@@ -466,7 +466,7 @@ $_SESSION['last_layout'] = $layout;
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Generator etykiet produktów (CSV)</title>
+    <title>Generator etykiet produktów z pliku CSV</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
         form { max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9; }
@@ -490,12 +490,12 @@ $_SESSION['last_layout'] = $layout;
 </head>
 <body>
     <form method="post" enctype="multipart/form-data">
-        <h1>Generator etykiet produktów (CSV)</h1>
+        <h1>Generator etykiet produktów</h1>
 
         <?php if (!isset($_SESSION['product_data'])): ?>
             <label for="datafile">1. Wybierz plik CSV z danymi:</label>
             <input type="file" name="datafile" id="datafile" accept=".csv" required>
-            <p class="hint">Plik CSV powinien być w formacie UTF-8 lub ANSI. Wymagane kolumny (nagłówki): <strong>Referencja, Nazwa referencji, Nazwa dostawcy, Gama, Cena standardowa</strong>.<br>Separator: przecinek. Jeśli plik zawiera inne kolumny, będą ignorowane.</p>
+            <p class="hint">Plik CSV powinien być w formacie UTF-8 lub ANSI. Wymagane kolumny (nagłówki): <strong>Referencja, Nazwa referencji, Nazwa dostawcy, Gama</strong>.<br>Separator: przecinek, średnik. Jeśli plik zawiera inne kolumny, będą ignorowane.</p>
             <button type="submit" name="upload" value="1">Wczytaj dane</button>
         <?php else: ?>
             <div class="file-info">
