@@ -33,18 +33,27 @@ function load_data_from_csv($file_path) {
         $headers[0] = ltrim($headers[0], "\xEF\xBB\xBF");
         $headers = array_map('trim', $headers);
 
-        while (($line = fgetcsv($handle, 0, $delimiter)) !== false) {
-            if (count($line) < count($headers)) {
-                // Uzupełnienie brakujących kolumn
-                $line = array_pad($line, count($headers), '');
-            }
-            $row = [];
-            foreach ($headers as $idx => $col) {
-                $row[$col] = isset($line[$idx]) ? trim($line[$idx]) : '';
-            }
-            $rows[] = $row;
-        }
-        fclose($handle);
+		while (($line = fgetcsv($handle, 0, $delimiter)) !== false) {
+			if (count($line) < count($headers)) {
+				$line = array_pad($line, count($headers), '');
+			}
+			$row = [];
+			foreach ($headers as $idx => $col) {
+				$row[$col] = isset($line[$idx]) ? trim($line[$idx]) : '';
+			}
+			// Sprawdź, czy wiersz nie jest pusty
+			$has_data = false;
+			foreach ($row as $value) {
+				if ($value !== '') {
+					$has_data = true;
+					break;
+				}
+			}
+			if ($has_data) {
+				$rows[] = $row;
+			}
+		}
+		fclose($handle);
     }
     return $rows;
 }
