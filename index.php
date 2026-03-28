@@ -123,33 +123,112 @@ function parse_queries($input) {
 }
 
 // Funkcja generująca kod kreskowy Code 128 (SVG)
-function code128_svg($text, $height = 160, $scale = 10) {
+function code128_svg($text, $height = 160, $scale = 2, $show_text = false) {
     if (empty($text)) return '';
 
-    $bits = '';
-    $hash = unpack('C*', md5($text, true));
-    foreach ($hash as $b) {
-        $bits .= str_pad(decbin($b), 8, '0', STR_PAD_LEFT);
+    // ---------- Tabela kodów Code 128 (zestaw B) ----------
+    // Indeksy 0-94 odpowiadają znakom ASCII 32-126 oraz znakom specjalnym
+    $codes = [
+        0 => "11011001100", 1 => "11001101100", 2 => "11001100110", 3 => "10010011000",
+        4 => "10010001100", 5 => "10001001100", 6 => "10011001000", 7 => "10011000100",
+        8 => "10001100100", 9 => "11001001000", 10 => "11001000100", 11 => "11000100100",
+        12 => "10110011100", 13 => "10011011100", 14 => "10011001110", 15 => "10111001100",
+        16 => "10011101100", 17 => "10011100110", 18 => "11001110010", 19 => "11001011100",
+        20 => "11001001110", 21 => "11011100100", 22 => "11001110100", 23 => "11101101110",
+        24 => "11101001100", 25 => "11100101100", 26 => "11100100110", 27 => "11101100100",
+        28 => "11100110100", 29 => "11100110010", 30 => "11011011000", 31 => "11011000110",
+        32 => "11000110110", 33 => "10100011000", 34 => "10001011000", 35 => "10001000110",
+        36 => "10110001000", 37 => "10001101000", 38 => "10001100010", 39 => "11010001000",
+        40 => "11000101000", 41 => "11000100010", 42 => "10110111000", 43 => "10110001110",
+        44 => "10001101110", 45 => "10111011000", 46 => "10111000110", 47 => "10001110110",
+        48 => "11101110110", 49 => "11010001110", 50 => "11000101110", 51 => "11011101000",
+        52 => "11011100010", 53 => "11011101110", 54 => "11101011000", 55 => "11101000110",
+        56 => "11100010110", 57 => "11101101000", 58 => "11101100010", 59 => "11100011010",
+        60 => "11101111010", 61 => "11001000010", 62 => "11110001010", 63 => "10100110000",
+        64 => "10100001100", 65 => "10010110000", 66 => "10010000110", 67 => "10000101100",
+        68 => "10000100110", 69 => "10110010000", 70 => "10110000100", 71 => "10011010000",
+        72 => "10011000010", 73 => "10000110100", 74 => "10000110010", 75 => "11000010010",
+        76 => "11001010000", 77 => "11110111010", 78 => "11000010100", 79 => "10001111010",
+        80 => "10100111100", 81 => "10010111100", 82 => "10010011110", 83 => "10111100100",
+        84 => "10011110100", 85 => "10011110010", 86 => "11110100100", 87 => "11110010100",
+        88 => "11110010010", 89 => "11011011110", 90 => "11011110110", 91 => "11110110110",
+        92 => "10101111000", 93 => "10100011110", 94 => "10001011110", 95 => "10111101000",
+        96 => "10111100010", 97 => "11110101000", 98 => "11110100010", 99 => "10111011110",
+        100 => "10111101110", 101 => "11101011110", 102 => "11110101110"
+    ];
+
+    // Znaki startowe: 103 = Start A, 104 = Start B, 105 = Start C, 106 = Stop
+    $start_code = 104; // Start B
+    $stop_code = 106;
+
+    // ---------- Konwersja tekstu na kody ----------
+    $values = [];
+    // Znak startowy
+    $values[] = $start_code;
+
+    // Każdy znak ASCII 32-126 mapujemy na indeks 0-94
+    for ($i = 0; $i < strlen($text); $i++) {
+        $ch = $text[$i];
+        $ascii = ord($ch);
+        if ($ascii >= 32 && $ascii <= 126) {
+            $idx = $ascii - 32;
+            $values[] = $idx;
+        } else {
+            // Dla znaków spoza zakresu można wstawić spację (indeks 0) lub pominąć
+            $values[] = 0;
+        }
     }
 
-    while (strlen($bits) < 200) $bits .= $bits;
-    $bits = substr($bits, 0, 200);
+    // ---------- Obliczanie sumy kontrolnej (checksum) ----------
+    $checksum = $values[0]; // start code
+    for ($i = 1; $i < count($values); $i++) {
+        $checksum += $values[$i] * $i;
+    }
+    $checksum = $checksum % 103;
+    $values[] = $checksum;   // dodajemy checksum
+    $values[] = $stop_code;  // stop code
+
+    // ---------- Budowanie ciągu bitów ----------
+    $binary = '';
+    foreach ($values as $val) {
+        if (isset($codes[$val])) {
+            $binary .= $codes[$val];
+        } else {
+            $binary .= '11011001100'; // fallback
+        }
+    }
+    // Dodanie cichej strefy (9 modułów czarnych)
+    $binary = '000000000' . $binary . '11'; // 11 modułów dla stop (zgodnie z normą)
+
+    // ---------- Rysowanie SVG ----------
+    $width = strlen($binary) * $scale;
+    $svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' . $width . '" height="' . $height . '" viewBox="0 0 ' . $width . ' ' . $height . '">';
 
     $x = 0;
-    $rects = [];
-    for ($i = 0; $i < strlen($bits); $i++) {
-        $w = $scale;
-        if ($bits[$i] === '1') {
-            $rects[] = "<rect x=\"{$x}\" y=\"0\" width=\"{$w}\" height=\"{$height}\"/>";
+    for ($i = 0; $i < strlen($binary); $i++) {
+        $bit = $binary[$i];
+        if ($bit == '1') {
+            $svg .= '<rect x="' . $x . '" y="0" width="' . $scale . '" height="' . $height . '" fill="black" />';
         }
-        $x += $w;
+        $x += $scale;
     }
-    $svgw = $x;
-    $svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{$svgw}\" height=\"{$height}\">" . implode('', $rects) . "</svg>";
+
+    // Opcjonalnie: wyświetlenie tekstu pod kodem
+    if ($show_text) {
+        $font_size = max(10, $scale * 3);
+        $text_width = strlen($text) * $font_size * 0.6;
+        $text_x = ($width - $text_width) / 2;
+        $text_y = $height + $font_size;
+        $svg .= '<text x="' . $text_x . '" y="' . $text_y . '" font-family="monospace" font-size="' . $font_size . '" fill="black">' . htmlspecialchars($text) . '</text>';
+        $svg_height = $height + $font_size + 2;
+        $svg = str_replace('height="' . $height . '"', 'height="' . $svg_height . '"', $svg);
+        $svg = str_replace('viewBox="0 0 ' . $width . ' ' . $height . '"', 'viewBox="0 0 ' . $width . ' ' . $svg_height . '"', $svg);
+    }
+
+    $svg .= '</svg>';
     return 'data:image/svg+xml;utf8,' . rawurlencode($svg);
 }
 
-// Funkcja renderująca etykiety – UKŁAD JAK NA CL02.jpg + NAZWA
 function render_labels($items, $layout) {
     $date = date('Y-m-d');
     $allowed_layouts = ['1up', '2up', '4up', '3v'];
@@ -195,7 +274,7 @@ function render_labels($items, $layout) {
     /* Kod kreskowy na górze */
     .barcode-top {
         text-align: center;
-        margin-bottom: 8mm;
+        margin-bottom: 2mm;
         flex-shrink: 0;
     }
     .barcode-top img {
@@ -233,25 +312,25 @@ function render_labels($items, $layout) {
     }
 
     /* Rozmiary dla różnych układów */
-    .layout-1up .barcode-top img { height: 160px; }
+    .layout-1up .barcode-top img { height: 200px; }
     .layout-1up .name-line { font-size: 40px; }
     .layout-1up .supplier-gama { font-size: 18px; }
     .layout-1up .date-line { font-size: 18px; }
     .layout-1up .ref-bottom { font-size: 240px; }
 
-    .layout-2up .barcode-top img { height: 110px; }
+    .layout-2up .barcode-top img { height: 160px; }
     .layout-2up .name-line { font-size: 34px; }
     .layout-2up .supplier-gama { font-size: 16px; }
     .layout-2up .date-line { font-size: 16px; }
     .layout-2up .ref-bottom { font-size: 168px; }
 
-    .layout-4up .barcode-top img { height: 74px; }
+    .layout-4up .barcode-top img { height: 110px; }
     .layout-4up .name-line { font-size: 22px; }
     .layout-4up .supplier-gama { font-size: 14px; }
     .layout-4up .date-line { font-size: 14px; }
     .layout-4up .ref-bottom { font-size: 110px; margin-top: 2mm; }
 
-    .layout-3v .barcode-top img { height: 160px; transform: rotate(90deg); }
+    .layout-3v .barcode-top img { height: 60px; transform: rotate(90deg); }
     .layout-3v .name-line { font-size: 26px; transform: rotate(90deg) translateX(-60%); }
     .layout-3v .supplier-gama { font-size: 16px; transform: rotate(90deg) translateX(33%);}
     .layout-3v .date-line { font-size: 16px; transform: rotate(90deg) translateX(33%); }
